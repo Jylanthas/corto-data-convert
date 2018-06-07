@@ -5,8 +5,6 @@ require 'pry-byebug'
 require 'active_support/inflector'
 # require 'nokogiri'
 
-## 
-# bundle exec ruby json_to_xml.rb Rick\ and\ Morty.json; cat Rick\ and\ Morty.xml | xmllint --format -
 # TODO: re-add <item type="tweet">
 
 def run
