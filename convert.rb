@@ -1,9 +1,9 @@
+#!/usr/bin/env ruby
 require 'json'
 require 'csv'
 require 'time'
 require 'pry-byebug'
 require 'active_support/inflector'
-# require 'nokogiri'
 
 # TODO: re-add <item type="tweet">
 

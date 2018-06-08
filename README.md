@@ -2,12 +2,13 @@
 ```
   gem install bundler
   bundle install
+  chmod +x convert.rb
 ```
 
 ## Running
 
 ```
-  bundle exec ruby convert.rb rick-and-morty.json
+  ./convert.rb rick-and-morty.json
   # writes rick-and-morty.xml
 
   head rick-and-morty.json
