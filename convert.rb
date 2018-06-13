@@ -11,7 +11,8 @@ require 'active_support/inflector'
 def run
   filepath = ARGV[0]
   outpath = ARGV[1]
-  validate = ARGV[2] && ARGV[2] == 'true'
+  @validate = ARGV.index '--validate'
+  @print = ARGV.index '--print'
 
   if File.directory?(filepath)
     paths = Dir[File.join(filepath, '/**/*.{json,csv}')]
@@ -30,25 +31,18 @@ def run
             FileUtils.mkdir_p(File.dirname(p))
           end
         end
-      convert(path, outfile, validate)
+      convert(path, outfile)
     end
   else
-    # outfile = if outpath.nil?
-    #     File.dirname(filepath)
-    #   else
-    #     binding.pry
-    #     File.join(outpath, outpath[filepath.length..-1]).tap do |p|
-    #       FileUtils.mkdir_p(File.dirname(p))
-    #     end
-    #   end
-    convert(filepath, outpath, validate)
+    convert(filepath, outpath)
   end
 end
 
-def convert(filepath, outpath=nil, validate=false)
+def convert(filepath, outpath=nil)
   @output_array_scalar_as_node_element = false
   ext = File.extname(filepath)
 
+  # transformation rules, arbitrarily specified by file, path, contents, etc
   xml = if ext == '.json'
     file = File.new(filepath, "r")
     json = JSON.load(file)
@@ -59,6 +53,34 @@ def convert(filepath, outpath=nil, validate=false)
     elsif json['source'] && ["http://twitter.com", 'reddit'].any? { |s| json['source'].downcase.include? s }
       make_element('root') do
         recurse([json], 1, 'items')
+      end
+    elsif filepath.include?('Script Analysis JSONs')
+      dirname,filename = File.split(filepath)
+      path_parts = dirname.split('/')
+      e_index = path_parts[-1].index 'e'
+      attrs = {
+        title: path_parts[-2],
+        season: path_parts[-1][0..e_index-1],
+        episode: path_parts[-1][e_index..-1],
+      }
+
+      # TODO: refactor redundant traits.reduce in all 3 branches below
+      make_element('root', attrs) do
+        if filename.include?('character')
+          json.reduce('') do |_,(k,traits)|
+            _ + make_element('character', name: k) do
+              traits.reduce('') { |_,(k,v)| _ + make_element('trait', name: k)  { v && v.to_s } }
+            end
+          end
+        elsif filename.include?('scene')
+          json.reduce('') do |_,(k,traits)|
+            _ + make_element('scene', name: k) do
+              traits.reduce('') { |_,(k,v)| _ + make_element('trait', name: k)  { v && v.to_s } }
+            end
+          end
+        else
+          json.reduce('') { |_,(k,v)| _ + make_element('trait', name: k)  { v && v.to_s } }
+        end
       end
     else
       make_element('root') do
@@ -95,18 +117,22 @@ def convert(filepath, outpath=nil, validate=false)
     end
   end
       
-  outpath = if outpath.nil?
-    File.basename(filepath, ext) + '.xml' # current dir
+  if @print
+    puts Nokogiri::XML(xml).to_xml(indent: 2)
   else
-    if File.directory?(outpath) # directory (outpath) + filename.xml
-      File.join(outpath, File.basename(filepath, ext) + '.xml')
-    else # directory (file) + filename.xml
-      File.join(File.dirname(outpath), File.basename(filepath, ext) + '.xml')
+    outpath = if outpath.nil?
+      File.basename(filepath, ext) + '.xml' # current dir
+    else
+      if File.directory?(outpath) # directory (outpath) + filename.xml
+        File.join(outpath, File.basename(filepath, ext) + '.xml')
+      else # directory (file) + filename.xml
+        File.join(File.dirname(outpath), File.basename(filepath, ext) + '.xml')
+      end
     end
+    File.write(outpath, xml)
   end
-  File.write(outpath, xml)
   
-  if validate
+  if @validate
     errors = Nokogiri::XML(xml).errors
     unless errors.empty?
       puts filepath
@@ -159,7 +185,7 @@ def recurse(o, depth=0, parent_element=nil, parent_type=nil)
 end
 
 def make_element(name, attrs=nil)
-  attr_str = attrs.reduce('') { |_,(k,v)| _+" #{k}='#{v}'" } if attrs
+  attr_str = attrs.reduce('') { |_,(k,v)| _+" #{k}=\"#{v}\"" } if attrs
   "<#{name}#{attr_str}>"+
   yield +
   "</#{name}>"
