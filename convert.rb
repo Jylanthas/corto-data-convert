@@ -43,6 +43,7 @@ def convert(filepath, outpath=nil)
   ext = File.extname(filepath)
 
   # transformation rules, arbitrarily specified by file, path, contents, etc
+  # TODO: responsibility of rules belongs somewhere else
   xml = if ext == '.json'
     file = File.new(filepath, "r")
     json = JSON.load(file)
@@ -51,6 +52,22 @@ def convert(filepath, outpath=nil)
         recurse(json['thread'], 1, 'items')
       end
     elsif json['source'] && ["http://twitter.com", 'reddit'].any? { |s| json['source'].downcase.include? s }
+      if filepath.include?('TOPS_Sentiment')
+        json['posts'].each do |post|
+          post['receptiviti'].each do |k,v|
+            post['receptiviti'][k] = v.map do |k1,v1|
+              {
+                'trait' => {
+                  '$attrs' => {
+                    'name' => k1,
+                  },
+                  '$text' => v1
+                }
+              }
+            end
+          end if post['receptiviti']
+        end
+      end if json['posts']
       make_element('root') do
         recurse([json], 1, 'items')
       end
@@ -145,14 +162,22 @@ end
 def recurse(o, depth=0, parent_element=nil, parent_type=nil)
   if o.is_a?(Hash)
     out = o.reduce('') do |mem, (k,v)|
-      k_clean = clean_name(k) # make sure tag name is valid
       if k.include?('$')
         # don't output tag, this node is meta type info
-        mem + recurse(v, depth+1, k_clean)
+        mem + recurse(v, depth+1, clean_name(k))
       else
-        mem + make_element(k_clean) do
-          recurse(v, depth+1, k_clean)
-        end
+        # permit json to communicate tag attributes
+        k_clean = clean_name(k) # ensure tag name is valid
+        mem + if v.is_a?(Hash) && v['$attrs'] # look down
+            parent_type = nil
+            make_element(k_clean, v['$attrs']) do
+              recurse(v['$text'], depth+1, k_clean)
+            end
+          else
+            make_element(k_clean) do
+              recurse(v, depth+1, k_clean)
+            end
+          end
       end
     end
     
@@ -204,7 +229,7 @@ end
 def clean_text(text)
   text = "#{text}".gsub("\u001A", '').strip # remove special characters
   if text.include?('<') && text.include?('>') # seems to include xml (or html). comment out, don't embed as-is
-    "<!--#{text}-->"
+    "<!--#{text.gsub(/-{2,}/, '')}-->"
   else
     # "#{o}".encode(xml: :text).gsub("\u001A", '').strip
     text.encode(xml: :text)
